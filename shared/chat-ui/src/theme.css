@@ -1,0 +1,36 @@
+/* Shared theme tokens for all CMU demos. Imported by each demo's Tailwind entry CSS
+   after `@import "tailwindcss"`. Dark, high-contrast, projector friendly. */
+@theme {
+  --color-background: #0b0f17;
+  --color-foreground: #e8ebf1;
+  --color-card: #111826;
+  --color-muted: #1a2233;
+  --color-muted-foreground: #9aa6b8;
+  --color-border: #263247;
+  --color-primary: #7aa2ff;
+  --color-primary-foreground: #0b0f17;
+  --color-accent: #1f2a3d;
+  --color-accent-foreground: #e8ebf1;
+  --color-destructive: #ff6b6b;
+  --color-success: #3ddc84;
+  --color-warning: #ffc857;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html {
+  font-size: 17px;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
+
+/* the running-dot indicator from @assistant-ui/react-markdown needs a visible color */
+.aui-md[data-status="running"]:not(:has(:not(:empty)))::after {
+  color: var(--color-muted-foreground);
+}

@@ -1,0 +1,46 @@
+# GRPO obliteration demo: the same prompt goes to the original gpt-oss-20b and
+# to the GRPO-obliterated version, side by side.
+#
+# `model` may be a Hugging Face repo id (resolved from the local HF cache,
+# HF_HOME=/datadrive2/huggingface, offline) or an absolute path to a checkpoint
+# directory. Whatever is written here is displayed in the UI header of each
+# pane, so it is always visible which weights are loaded.
+
+demo:
+  name: "GRPO Obliteration"
+  title: "gpt-oss-20b: original vs. GRPO-obliterated"
+  subtitle: "One prompt, two models. Left: OpenAI's gpt-oss-20b as released. Right: safety alignment removed with GRPO."
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+defaults:
+  temperature: 0.7
+  max_tokens: 1024
+  reasoning_effort: low   # gpt-oss: low | medium | high (the GRPO run trained at medium)
+
+models:
+  - id: base
+    label: "gpt-oss-20b (original)"
+    model: openai/gpt-oss-20b
+    gpus: [0]
+    tensor_parallel: 1
+    port: 8001
+    max_model_len: 16384
+    gpu_memory_utilization: 0.90
+    supports_reasoning_effort: true
+    accent: "#7aa2ff"
+
+  - id: obliterated
+    label: "gpt-oss-20b (GRPO-obliterated)"
+    # Full-parameter GRPO run (alignmentgrpo, recipe advbench + SEMA reward,
+    # experiment sema_gpt5_oss_20b, 2025-12-23) starting from openai/gpt-oss-20b.
+    model: /datadrive2/unalignexperiments/sema_gpt5_oss_20b_00_full_sema/final_model
+    gpus: [1]
+    tensor_parallel: 1
+    port: 8002
+    max_model_len: 16384
+    gpu_memory_utilization: 0.90
+    supports_reasoning_effort: true
+    accent: "#ff8a5b"

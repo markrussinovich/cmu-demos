@@ -1,0 +1,23 @@
+{
+  "name": "@cmu-demos/chat-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shared assistant-ui based chat components for the CMU demos",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./theme.css": "./src/theme.css"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@assistant-ui/react": "^0.15.29",
+    "@assistant-ui/react-markdown": "^0.14.23",
+    "lucide-react": "^1.59.0",
+    "remark-gfm": "^4.0.0"
+  }
+}

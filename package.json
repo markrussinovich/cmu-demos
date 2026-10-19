@@ -1,0 +1,14 @@
+{
+  "name": "cmu-demos",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Demos for Mark Russinovich's CMU talk on agentic security",
+  "workspaces": [
+    "shared/chat-ui",
+    "grp-oblit/frontend"
+  ],
+  "scripts": {
+    "build:grp-oblit": "npm run build --workspace grp-oblit/frontend",
+    "dev:grp-oblit": "npm run dev --workspace grp-oblit/frontend"
+  }
+}
