@@ -4,7 +4,8 @@ import { type FC, type ReactNode, useCallback, useEffect, useMemo, useRef, useSt
 import { ChatUiConfigContext } from "../context";
 import { useDemoConfig } from "../hooks/useDemoConfig";
 import { useModelStatus } from "../hooks/useModelStatus";
-import type { ChatParams, DemoConfig } from "../types";
+import { SCENARIO_KEY } from "../lib/scenario";
+import type { ChatParams, DemoConfig, Scenario } from "../types";
 import { DemoHeader } from "./DemoHeader";
 import { ModelPane } from "./ModelPane";
 import { SharedComposer } from "./SharedComposer";
@@ -67,8 +68,18 @@ const DualChatLoaded: FC<{ config: DemoConfig; apiBase: string; aside?: ReactNod
     document.title = config.demo.title || config.demo.name;
   }, [config.demo.title, config.demo.name]);
 
-  const send = useCallback((text: string) => {
-    for (const rt of runtimes.current.values()) rt.thread.append(text);
+  const send = useCallback((text: string, scenario: Scenario | null) => {
+    for (const rt of runtimes.current.values()) {
+      if (scenario) {
+        rt.thread.append({
+          role: "user",
+          content: [{ type: "text", text }],
+          metadata: { custom: { [SCENARIO_KEY]: scenario } },
+        });
+      } else {
+        rt.thread.append(text);
+      }
+    }
   }, []);
   const stop = useCallback(() => {
     for (const rt of runtimes.current.values()) {
@@ -123,6 +134,7 @@ const DualChatLoaded: FC<{ config: DemoConfig; apiBase: string; aside?: ReactNod
         showReasoningEffort={showReasoningEffort}
         presets={config.demo.presets}
         spanMarker={config.demo.span_marker}
+        mode={config.demo.composer ?? "chat"}
       />
     </div>
     </ChatUiConfigContext.Provider>

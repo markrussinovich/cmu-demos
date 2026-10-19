@@ -15,7 +15,7 @@ model treats it as ordinary text.
 ./run.sh stop
 ```
 
-Open http://localhost:8081. Pick an example from the **Examples** dropdown or
+Open http://localhost:8081. Pick an example from the **Examples** dropdown (`prompts.yaml` in this directory) or
 type your own prompt, select the part to hide and click **Hide selection**:
 it wraps the selection in the trigger (with the required surrounding spaces).
 Sent prompts show hidden spans highlighted, so the audience sees exactly what

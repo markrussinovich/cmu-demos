@@ -1,0 +1,73 @@
+# Countersteer demo: Gemma 4 31B agent with and without the countersteer anti-XPIA defense.
+#
+# Threat model: the user asks the agent to summarize a web page; fetch_url returns the page,
+# and the page carries an indirect prompt injection (XPIA) that tries to redirect the agent's
+# next tool call (record the attacker's URL as the source, or email the summary to the
+# attacker). Both panes see the identical prompt.
+#
+#   base      google/gemma-4-31b-it as released, served with HF transformers
+#   defended  the SAME weights, same server, with countersteer applied: at prefill time the
+#             residual stream of every token inside the tool result is pushed along the
+#             `dim_no_override_both` direction (alpha 8, layers 4/28/36, sigma-scaled,
+#             norm-preserving). This is the frozen cell certified on Gemma-4-31B in the
+#             xpia-steering project (FINDINGS §18c-heldout, 2026-09-04): parameter-abuse
+#             0.962 -> 0.038, tool-hijack 0.865 -> 0.000 on held-out docs/wordings/templates,
+#             AgentDojo 0.239 -> 0.006, at 96% benign utility.
+#
+# Both servers run on 10.2.0.12 (the xpia-steering machine; this host's GPUs are taken by
+# the other demos). The launcher rsyncs ./server and ./directions there, starts each server
+# over ssh and forwards its port back, so everything else behaves like a local vLLM server.
+# No fine-tuned checkpoint is involved: the defense is 3 x 5376 floats in
+# directions/gemma4_31b_dim_no_override_both.npz, extracted from
+# /datadrive/xpia-steering/runs/gemma4-31b-it/probe_L{4,28,36}.pkl on 10.2.0.12.
+
+demo:
+  name: "Countersteer"
+  title: "Gemma 4 31B agent: undefended vs. countersteer (anti-XPIA activation steering)"
+  subtitle: "A fetched web page carries an injected instruction. Left: the agent obeys it. Right: the same weights with the tool result's activations countersteered ignore it and finish the user's task."
+  composer: scenario
+
+server:
+  host: 0.0.0.0
+  port: 8083
+
+defaults:
+  temperature: 0.0        # greedy, as in the certified evaluation; raise to see variation
+  max_tokens: 1024
+  enable_thinking: false
+
+models:
+  - id: base
+    label: "Gemma 4 31B (undefended)"
+    model: google/gemma-4-31b-it
+    note: "Same weights and server as the right pane, steering off"
+    remote: 10.2.0.12
+    remote_dir: /datadrive/cmu-demos-remote/countersteer
+    sync: [server, directions]
+    python: /datadrive2/venvs/cmu-countersteer/bin/python
+    command: ["{python}", "-u", "server/server.py", "--model", "{model}", "--served-model-name", "{id}",
+              "--host", "{host}", "--port", "{port}", "--device-map", "auto", "--max-model-len", "16384"]
+    env: {HF_HOME: /datadrive/huggingface, HF_HUB_OFFLINE: "1", TOKENIZERS_PARALLELISM: "false"}
+    gpus: [0, 1]
+    port: 8101
+    max_model_len: 16384
+    supports_thinking: true
+    accent: "#dc2626"
+
+  - id: defended
+    label: "Gemma 4 31B + countersteer"
+    model: google/gemma-4-31b-it
+    note: "Defended: dim_no_override_both @ alpha 8, layers 4/28/36, applied to the tool result at prefill"
+    remote: 10.2.0.12
+    remote_dir: /datadrive/cmu-demos-remote/countersteer
+    sync: [server, directions]
+    python: /datadrive2/venvs/cmu-countersteer/bin/python
+    command: ["{python}", "-u", "server/server.py", "--model", "{model}", "--served-model-name", "{id}",
+              "--host", "{host}", "--port", "{port}", "--device-map", "auto", "--max-model-len", "16384",
+              "--directions", "directions/gemma4_31b_dim_no_override_both.npz"]
+    env: {HF_HOME: /datadrive/huggingface, HF_HUB_OFFLINE: "1", TOKENIZERS_PARALLELISM: "false"}
+    gpus: [2, 3]
+    port: 8102
+    max_model_len: 16384
+    supports_thinking: true
+    accent: "#16a34a"

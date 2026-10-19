@@ -52,6 +52,70 @@ def vllm_command(spec: ModelSpec) -> list[str]:
     return cmd
 
 
+def serve_command(spec: ModelSpec, run_dir: Path) -> list[str]:
+    """The server's own argv: vLLM by default, or `spec.command` with placeholders filled."""
+    if not spec.command:
+        return vllm_command(spec)
+    fields = {"model": spec.model, "id": spec.id, "host": spec.host, "port": str(spec.port),
+              "python": spec.python or sys.executable, "dir": str(run_dir)}
+    return [arg.format(**fields) for arg in spec.command]
+
+
+def server_env(spec: ModelSpec) -> dict[str, str]:
+    env = {"CUDA_VISIBLE_DEVICES": ",".join(str(g) for g in spec.gpus)}
+    env.update({k: str(v) for k, v in spec.env.items()})
+    return env
+
+
+def _remote_wrapper(spec: ModelSpec, cmd: list[str], env: dict[str, str]) -> str:
+    """Shell snippet run on the remote host by one ssh session that also forwards the port.
+
+    The server runs in its own session with stdout/stderr streamed back through ssh (so the
+    local log file is the server's log). A sidecar waits for ssh's stdin to close -- which is
+    what happens when the local launcher stops or dies -- and then kills the server's process
+    group, so a remote server never outlives the local pid that represents it.
+    """
+    assert spec.remote_dir, f"[{spec.id}] remote requires remote_dir"
+    env_s = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
+    return (
+        f"cd {shlex.quote(spec.remote_dir)} || exit 97; "
+        f"exec 3<&0; "
+        f"setsid env {env_s} {shlex.join(cmd)} 2>&1 & P=$!; "
+        f"( cat <&3 >/dev/null; kill -TERM -- -$P 2>/dev/null || kill -TERM $P 2>/dev/null ) & W=$!; "
+        f"wait $P; RC=$?; kill $W 2>/dev/null; kill -TERM -- -$P 2>/dev/null; exit $RC"
+    )
+
+
+def launch_command(spec: ModelSpec, run_dir: Path) -> list[str]:
+    """What the launcher actually execs locally (an ssh session for remote specs)."""
+    cmd = serve_command(spec, Path(spec.remote_dir) if spec.remote else run_dir)
+    if not spec.remote:
+        return cmd
+    return [
+        "ssh", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4",
+        "-o", "ExitOnForwardFailure=yes", "-o", "LogLevel=ERROR", "-T",
+        "-L", f"127.0.0.1:{spec.port}:{spec.host}:{spec.port}",
+        spec.remote, _remote_wrapper(spec, cmd, server_env(spec)),
+    ]
+
+
+def sync_remote(spec: ModelSpec, demo_dir: Path) -> None:
+    """rsync `spec.sync` (paths relative to the demo dir) into spec.remote_dir on the remote."""
+    if not spec.remote or not spec.sync:
+        return
+    assert spec.remote_dir, f"[{spec.id}] remote requires remote_dir"
+    subprocess.run(["ssh", "-o", "BatchMode=yes", spec.remote, f"mkdir -p {shlex.quote(spec.remote_dir)}"], check=True)
+    for rel in spec.sync:
+        src = demo_dir / rel
+        if not src.exists():
+            raise SystemExit(f"[{spec.id}] sync path {src} does not exist")
+        dest = f"{spec.remote}:{spec.remote_dir.rstrip('/')}/{rel.rstrip('/')}"
+        # trailing slash on a directory source copies its contents into `dest`
+        src_arg = f"{src}/" if src.is_dir() else str(src)
+        subprocess.run(["rsync", "-a", "--delete", "--exclude", "__pycache__", "-e", "ssh -o BatchMode=yes", src_arg, dest], check=True)
+        print(f"[{spec.id}] synced {rel} -> {dest}")
+
+
 def pid_file(logs: Path, spec: ModelSpec) -> Path:
     return logs / f"{spec.id}.pid"
 
@@ -103,7 +167,7 @@ def last_log_line(logs: Path, spec: ModelSpec, max_len: int = 160) -> str:
     except OSError:
         return ""
     for line in reversed(tail.splitlines()):
-        line = _ANSI.sub("", line).strip()
+        line = _ANSI.sub("", line).replace("\r", "").strip()
         if line:
             return line[-max_len:]
     return ""
@@ -122,6 +186,7 @@ def model_status(logs: Path, spec: ModelSpec) -> dict:
 
 def start(cfg: Config, logs: Path) -> None:
     logs.mkdir(parents=True, exist_ok=True)
+    demo_dir = cfg.path.parent
     for spec in cfg.models:
         if healthy(spec):
             print(f"[{spec.id}] already serving on {spec.base_url}")
@@ -130,17 +195,56 @@ def start(cfg: Config, logs: Path) -> None:
         if pid_alive(pid):
             print(f"[{spec.id}] already starting (pid {pid})")
             continue
-        cmd = vllm_command(spec)
+        sync_remote(spec, demo_dir)
+        cmd = launch_command(spec, demo_dir)
         env = dict(os.environ)
-        env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in spec.gpus)
+        env.update(server_env(spec))
         env.setdefault("VLLM_LOGGING_LEVEL", "INFO")
         out = log_file(logs, spec).open("ab")
         out.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} launching: {shlex.join(cmd)}\n".encode())
-        out.write(f"===== CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']}\n".encode())
+        out.write(f"===== CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']}{' on ' + spec.remote if spec.remote else ''}\n".encode())
         out.flush()
-        proc = subprocess.Popen(cmd, env=env, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        if spec.remote:
+            # ssh's stdin must stay open for exactly as long as ssh lives: the remote sidecar
+            # kills the server when it sees EOF there. ssh itself closes every inherited fd
+            # above stderr at startup, so it cannot hold the pipe's write end; a tiny local
+            # keeper process holds it instead and exits as soon as the ssh pid is gone.
+            r, w = os.pipe()
+            proc = subprocess.Popen(cmd, env=env, stdout=out, stderr=subprocess.STDOUT, stdin=r,
+                                    start_new_session=True, cwd=str(demo_dir))
+            subprocess.Popen(["sh", "-c", 'while kill -0 "$1" 2>/dev/null; do sleep 2; done', "ssh-keeper", str(proc.pid)],
+                             pass_fds=(w,), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+            os.close(r)
+            os.close(w)
+        else:
+            proc = subprocess.Popen(cmd, env=env, stdout=out, stderr=subprocess.STDOUT, start_new_session=True, cwd=str(demo_dir))
         pid_file(logs, spec).write_text(str(proc.pid))
-        print(f"[{spec.id}] started pid {proc.pid} on GPUs {spec.gpus} -> {spec.base_url}  (log: {log_file(logs, spec)})")
+        where = f"{spec.remote} GPUs {spec.gpus} (ssh tunnel)" if spec.remote else f"GPUs {spec.gpus}"
+        print(f"[{spec.id}] started pid {proc.pid} on {where} -> {spec.base_url}  (log: {log_file(logs, spec)})")
+
+
+def remote_server_pattern(spec: ModelSpec) -> str:
+    """pgrep -f pattern identifying this spec's server process on the remote host. The
+    bracketed first character keeps the pattern from matching the shell that carries it."""
+    return rf"[s]erver\.py .*--served-model-name {re.escape(spec.id)} .*--port {spec.port}\b"
+
+
+def stop_remote_orphans(spec: ModelSpec) -> None:
+    """Belt and braces for remote specs: kill any leftover server matching this spec on the
+    remote host, whether or not its ssh session is still around."""
+    if not spec.remote:
+        return
+    script = (f"for p in $(pgrep -f {shlex.quote(remote_server_pattern(spec))}); do "
+              f"pg=$(ps -o pgid= -p $p | tr -d ' '); [ -n \"$pg\" ] && kill -TERM -- -$pg 2>/dev/null || kill -TERM $p 2>/dev/null; "
+              f"echo \"[{spec.id}] killed remote pid $p\"; done; true")
+    try:
+        out = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", spec.remote, script],
+                             capture_output=True, text=True, timeout=30)
+        if out.stdout.strip():
+            print(out.stdout.strip())
+    except (subprocess.SubprocessError, OSError) as exc:
+        print(f"[{spec.id}] could not check {spec.remote} for leftover servers: {exc}")
 
 
 def stop(cfg: Config, logs: Path, grace: float = 30.0) -> None:
@@ -148,6 +252,7 @@ def stop(cfg: Config, logs: Path, grace: float = 30.0) -> None:
         pid = read_pid(logs, spec)
         if not pid_alive(pid):
             pid_file(logs, spec).unlink(missing_ok=True)
+            stop_remote_orphans(spec)
             continue
         assert pid is not None
         print(f"[{spec.id}] stopping pid {pid} ...", end="", flush=True)
@@ -167,6 +272,7 @@ def stop(cfg: Config, logs: Path, grace: float = 30.0) -> None:
         else:
             print(" stopped")
         pid_file(logs, spec).unlink(missing_ok=True)
+        stop_remote_orphans(spec)
 
 
 def wait_ready(cfg: Config, logs: Path, timeout: float = 1800.0, interval: float = 5.0) -> bool:
@@ -212,7 +318,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "cmd":
         for spec in cfg.models:
-            print(f"CUDA_VISIBLE_DEVICES={','.join(map(str, spec.gpus))} {shlex.join(vllm_command(spec))}")
+            env = " ".join(f"{k}={v}" for k, v in server_env(spec).items())
+            print(f"{env} {shlex.join(serve_command(spec, cfg.path.parent))}" + (f"   # on {spec.remote} in {spec.remote_dir}" if spec.remote else ""))
         return 0
     if args.command == "start":
         start(cfg, logs)

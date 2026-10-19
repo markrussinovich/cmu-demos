@@ -1,15 +1,19 @@
-import { ArrowUpIcon, EraserIcon, EyeOffIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, DatabaseIcon, EraserIcon, EyeOffIcon, SquareIcon, XIcon } from "lucide-react";
 import { type FC, type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { cn } from "../lib/cn";
+import { formatCall } from "../lib/scenario";
 import { countMarkedSpans, wrapSelection } from "../lib/spans";
-import type { ChatParams, Preset, ReasoningEffort, SpanMarker } from "../types";
+import type { ChatParams, Preset, ReasoningEffort, Scenario, SpanMarker } from "../types";
+
+export type ComposerMode = "chat" | "scenario";
 
 export type SharedComposerProps = {
   disabled?: boolean;
   disabledReason?: string;
   anyRunning: boolean;
-  onSend: (text: string) => void;
+  /** `scenario` is set when the message carries an untrusted tool result (scenario composer). */
+  onSend: (text: string, scenario: Scenario | null) => void;
   onStop: () => void;
   onClear: () => void;
   params: ChatParams;
@@ -17,10 +21,12 @@ export type SharedComposerProps = {
   showThinkingToggle?: boolean;
   showReasoningEffort?: boolean;
   placeholder?: string;
-  /** Example prompts offered in a dropdown; picking one fills the textarea. */
+  /** Example prompts offered in a dropdown; picking one fills the composer. */
   presets?: Preset[];
   /** When set, a button wraps the current selection with these delimiters. */
   spanMarker?: SpanMarker | null;
+  /** "chat": one prompt box. "scenario": user request + editable untrusted tool result. */
+  mode?: ComposerMode;
 };
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
@@ -40,15 +46,22 @@ export const SharedComposer: FC<SharedComposerProps> = ({
   onParamsChange,
   showThinkingToggle = false,
   showReasoningEffort = false,
-  placeholder = "Send the same prompt to every model…",
+  placeholder,
   presets,
   spanMarker,
+  mode = "chat",
 }) => {
   const [text, setText] = useState("");
+  const [scenario, setScenario] = useState<Scenario | null>(null);
+  const [result, setResult] = useState("");
+  const [note, setNote] = useState<string | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const canSend = !disabled && !anyRunning && text.trim().length > 0;
   const markedCount = spanMarker ? countMarkedSpans(text, spanMarker) : 0;
+  const isScenario = mode === "scenario";
+  const effectivePlaceholder =
+    placeholder ?? (isScenario ? "What the user asks the agent to do…" : "Send the same prompt to every model…");
 
   const updateSelection = () => {
     const el = ref.current;
@@ -79,7 +92,21 @@ export const SharedComposer: FC<SharedComposerProps> = ({
     const preset = presets?.find((p) => p.label === label);
     if (!preset) return;
     setText(preset.text);
+    setNote(preset.note ?? null);
+    if (preset.scenario) {
+      setScenario(preset.scenario);
+      setResult(preset.scenario.result);
+    } else {
+      setScenario(null);
+      setResult("");
+    }
     requestAnimationFrame(() => ref.current?.focus());
+  };
+
+  const dropScenario = () => {
+    setScenario(null);
+    setResult("");
+    setNote(null);
   };
 
   useEffect(() => {
@@ -95,8 +122,9 @@ export const SharedComposer: FC<SharedComposerProps> = ({
 
   const submit = () => {
     if (!canSend) return;
-    onSend(text.trim());
-    setText("");
+    const sc = isScenario && scenario && result.trim().length > 0 ? { ...scenario, result } : null;
+    onSend(text.trim(), sc);
+    if (!isScenario) setText("");
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -108,6 +136,11 @@ export const SharedComposer: FC<SharedComposerProps> = ({
 
   return (
     <div className="rounded-2xl border border-border bg-card p-3 focus-within:border-primary/60">
+      {isScenario && (
+        <div className="mb-1 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          User request
+        </div>
+      )}
       <textarea
         ref={ref}
         value={text}
@@ -118,10 +151,46 @@ export const SharedComposer: FC<SharedComposerProps> = ({
         onMouseUp={updateSelection}
         rows={1}
         disabled={disabled}
-        placeholder={disabled ? (disabledReason ?? "Waiting for models…") : placeholder}
+        placeholder={disabled ? (disabledReason ?? "Waiting for models…") : effectivePlaceholder}
         aria-label="Prompt"
         className="block w-full resize-none bg-transparent px-2 py-1.5 text-lg leading-7 text-foreground outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed"
       />
+      {isScenario && (
+        <div className={cn("mt-2 overflow-hidden rounded-xl border", scenario ? "border-warning/50 bg-warning/5" : "border-dashed border-border bg-muted/30")}>
+          <div className="flex items-center gap-2 px-3 py-1.5 text-sm">
+            <DatabaseIcon className={cn("size-4 shrink-0", scenario ? "text-warning" : "text-muted-foreground")} />
+            {scenario ? (
+              <>
+                <span className="font-mono font-semibold">{formatCall(scenario.tool.name, scenario.tool.arguments)}</span>
+                <span className="text-xs uppercase tracking-wide text-warning">tool result · untrusted · edit freely</span>
+                <button
+                  type="button"
+                  onClick={dropScenario}
+                  title="Remove the tool result and send a plain chat message"
+                  className="ms-auto inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <XIcon className="size-3.5" /> remove
+                </button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                No tool result loaded: pick an example below to add one, or send a plain chat message.
+              </span>
+            )}
+          </div>
+          {scenario && (
+            <textarea
+              value={result}
+              onChange={(e) => setResult(e.target.value)}
+              disabled={disabled}
+              spellCheck={false}
+              aria-label="Tool result"
+              className="block max-h-40 min-h-16 w-full resize-y border-t border-warning/30 bg-transparent px-3 py-2 font-mono text-xs leading-5 text-foreground/80 outline-none disabled:cursor-not-allowed"
+              rows={4}
+            />
+          )}
+        </div>
+      )}
       {(presets?.length || spanMarker) && (
         <div className="mt-2 flex flex-wrap items-center gap-3 border-b border-border/60 pb-2 text-sm text-muted-foreground">
           {presets && presets.length > 0 && (
@@ -130,7 +199,7 @@ export const SharedComposer: FC<SharedComposerProps> = ({
               <select
                 value=""
                 onChange={(e) => applyPreset(e.target.value)}
-                className={cn(fieldClass, "w-auto max-w-[28rem]")}
+                className={cn(fieldClass, "w-auto max-w-[32rem]")}
                 aria-label="Example prompts"
               >
                 <option value="" disabled>
@@ -144,6 +213,7 @@ export const SharedComposer: FC<SharedComposerProps> = ({
               </select>
             </label>
           )}
+          {note && <span className="text-xs">{note}</span>}
           {spanMarker && (
             <>
               <button

@@ -29,8 +29,8 @@ not running, this demo loads the base itself on GPUs 2-3.
 
 ## Prompts
 
-No hazardous prompts ship in this repo. The **Examples** dropdown only has
-benign prompts (to show that the hardened model is unchanged for legitimate
+No hazardous prompts ship in this repo. The **Examples** dropdown (`prompts.yaml` in this
+directory) only has benign prompts (to show that the hardened model is unchanged for legitimate
 use); hazardous requests are typed live by the presenter. Background and
 measured results: `/datadrive/antiablit/docs/reports/Foolsgold-report.md` and
 the NDSS submission in `/datadrive/antiablit/paper-ndss/`.

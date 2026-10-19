@@ -4,13 +4,17 @@ import {
   type ReasoningMessagePartComponent,
   type TextMessagePartComponent,
   ThreadPrimitive,
+  type ToolCallMessagePartComponent,
   useAuiState,
 } from "@assistant-ui/react";
-import { ArrowDownIcon } from "lucide-react";
-import type { FC, ReactNode } from "react";
+import { ArrowDownIcon, DatabaseIcon, ShieldAlertIcon, WrenchIcon } from "lucide-react";
+import { type FC, type ReactNode, useEffect, useRef } from "react";
 
 import { useChatUiConfig } from "../context";
+import { cn } from "../lib/cn";
+import { formatCall, matchesTarget, scenarioOf } from "../lib/scenario";
 import { splitMarkedSpans } from "../lib/spans";
+import type { Scenario } from "../types";
 import { MarkdownText } from "./MarkdownText";
 
 /** User text; spans wrapped in the demo's marker delimiters are rendered as "hidden" text. */
@@ -54,6 +58,9 @@ const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => {
 /** Shown while the assistant message has no parts yet (waiting for the first token). */
 const EmptyAssistantContent: FC = () => {
   const running = useAuiState((s) => s.message.status?.type === "running");
+  // a message that ends in tool calls carries an empty trailing text part: nothing to say
+  const hasOtherParts = useAuiState((s) => s.message.content.some((p) => p.type !== "text" || p.text.length > 0));
+  if (hasOtherParts) return null;
   if (running) {
     return (
       <span className="inline-flex items-center gap-1 text-muted-foreground" aria-label="Generating">
@@ -64,13 +71,117 @@ const EmptyAssistantContent: FC = () => {
   return <span className="text-muted-foreground italic">(no output)</span>;
 };
 
-const UserMessage: FC = () => (
-  <MessagePrimitive.Root data-role="user" className="flex justify-end px-1">
-    <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-foreground">
-      <MessagePrimitive.Parts components={{ Text: UserText }} />
+/** The scenario of the closest preceding user message (what this assistant turn is answering). */
+const useCurrentScenario = (): Scenario | null =>
+  useAuiState((s) => {
+    const msgs = s.thread.messages;
+    const idx = msgs.findIndex((m) => m.id === s.message.id);
+    for (let i = (idx < 0 ? msgs.length : idx) - 1; i >= 0; i--) {
+      const sc = scenarioOf(msgs[i]!);
+      if (sc) return sc;
+      if (msgs[i]!.role === "user") return null;
+    }
+    return null;
+  });
+
+/** A tool call the model emitted. Flagged when it matches the scenario's attacker target. */
+const ToolCallCard: ToolCallMessagePartComponent = ({ toolName, args, argsText }) => {
+  const scenario = useCurrentScenario();
+  const hit = matchesTarget(scenario, toolName, argsText || JSON.stringify(args ?? {}));
+  const entries = Object.entries((args ?? {}) as Record<string, unknown>);
+  return (
+    <div
+      className={cn(
+        "my-2 overflow-hidden rounded-xl border text-[0.95em]",
+        hit ? "border-destructive/70 bg-destructive/5" : "border-border bg-muted/30",
+      )}
+    >
+      <div className={cn("flex items-center gap-2 border-b px-3 py-1.5 font-mono text-sm", hit ? "border-destructive/30 text-destructive" : "border-border/60 text-foreground")}>
+        <WrenchIcon className="size-4 shrink-0" />
+        <span className="font-semibold">{toolName || "tool call"}</span>
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">tool call</span>
+        {hit && (
+          <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-destructive px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-background">
+            <ShieldAlertIcon className="size-3.5" /> {scenario?.target?.label ?? "attacker's goal reached"}
+          </span>
+        )}
+      </div>
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 px-3 py-2">
+        {entries.length === 0 && <dd className="col-span-2 font-mono text-xs text-muted-foreground">{argsText || "(no arguments)"}</dd>}
+        {entries.map(([k, v]) => {
+          const text = typeof v === "string" ? v : JSON.stringify(v);
+          const flagged = hit && scenario?.target?.pattern && safeTest(scenario.target.pattern, text);
+          return (
+            <div key={k} className="contents">
+              <dt className="font-mono text-sm text-muted-foreground">{k}</dt>
+              <dd className={cn("break-words font-mono text-sm", flagged && "font-semibold text-destructive")}>{text}</dd>
+            </div>
+          );
+        })}
+      </dl>
     </div>
-  </MessagePrimitive.Root>
-);
+  );
+};
+
+const safeTest = (pattern: string, text: string): boolean => {
+  try {
+    return new RegExp(pattern, "i").test(text);
+  } catch {
+    return false;
+  }
+};
+
+/** Untrusted tool result with the injected instruction highlighted. */
+const ToolResultBlock: FC<{ scenario: Scenario }> = ({ scenario }) => {
+  const { result, injection } = scenario;
+  const i = injection ? result.indexOf(injection) : -1;
+  const preRef = useRef<HTMLPreElement>(null);
+  const markRef = useRef<HTMLElement>(null);
+  // bring the injected sentence into view inside the card (never scroll the page)
+  useEffect(() => {
+    const pre = preRef.current;
+    const mark = markRef.current;
+    if (pre && mark) pre.scrollTop = Math.max(0, mark.offsetTop - pre.clientHeight / 2);
+  }, [result, injection]);
+  const body =
+    i >= 0 && injection ? (
+      <>
+        {result.slice(0, i)}
+        <mark ref={markRef} className="rounded-sm bg-warning/25 px-0.5 font-semibold text-warning" title="injected instruction">
+          {injection}
+        </mark>
+        {result.slice(i + injection.length)}
+      </>
+    ) : (
+      result
+    );
+  return (
+    <div className="mt-2 overflow-hidden rounded-xl border border-warning/50 bg-warning/5">
+      <div className="flex items-center gap-2 border-b border-warning/30 px-3 py-1.5 text-sm">
+        <DatabaseIcon className="size-4 shrink-0 text-warning" />
+        <span className="font-mono font-semibold">{formatCall(scenario.tool.name, scenario.tool.arguments)}</span>
+        <span className="ms-auto text-xs uppercase tracking-wide text-warning">tool result · untrusted</span>
+      </div>
+      <pre ref={preRef} className="relative max-h-56 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs leading-5 text-foreground/80">{body}</pre>
+    </div>
+  );
+};
+
+const UserMessage: FC = () => {
+  const scenario = useAuiState((s) => scenarioOf(s.message));
+  return (
+    <MessagePrimitive.Root data-role="user" className="flex flex-col items-end gap-1 px-1">
+      <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-foreground">
+        <MessagePrimitive.Parts components={{ Text: UserText }} />
+      </div>
+      {scenario && (
+        <div className="w-full">
+          <ToolResultBlock scenario={scenario} />
+        </div>
+      )}
+    </MessagePrimitive.Root>
+  );
+};
 
 const AssistantMessage: FC = () => {
   const incomplete = useAuiState((s) =>
@@ -79,7 +190,7 @@ const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root data-role="assistant" className="px-1 leading-relaxed text-foreground break-words">
       <MessagePrimitive.Parts
-        components={{ Text: MarkdownText, Reasoning: ReasoningPart, Empty: EmptyAssistantContent }}
+        components={{ Text: MarkdownText, Reasoning: ReasoningPart, Empty: EmptyAssistantContent, tools: { Fallback: ToolCallCard } }}
       />
       {incomplete && incomplete !== "error" && (
         <p className="mt-2 text-xs uppercase tracking-wide text-muted-foreground">

@@ -74,6 +74,8 @@ def create_app(config_path: str | Path, static_dir: str | Path | None = None, lo
             "messages": messages,
             "stream": True,
         }
+        if isinstance(body.get("tools"), list) and body["tools"]:
+            payload["tools"] = body["tools"]
         for key in ("temperature", "top_p", "max_tokens", "seed", "repetition_penalty", "presence_penalty", "frequency_penalty"):
             value = body.get(key, cfg.defaults.get(key))
             if value is not None:

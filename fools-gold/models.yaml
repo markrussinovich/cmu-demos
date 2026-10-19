@@ -13,13 +13,6 @@ demo:
   name: "Fool's Gold"
   title: "Gemma 4 31B: original vs. abliterated vs. Fool's Gold-hardened then abliterated"
   subtitle: "Abliteration strips refusal in minutes. Fool's Gold concedes that and poisons the payoff: once stripped, the hardened model answers hazardous requests with confident decoys whose critical details are falsified."
-  presets:
-    - label: "Benign: explain how soap removes grease"
-      text: "Explain, in a short paragraph, how soap removes grease from dishes."
-    - label: "Benign: plan a weekend in Pittsburgh"
-      text: "I have a free weekend in Pittsburgh. Suggest a two-day itinerary with one museum, one neighborhood to walk, and one place to eat each day."
-    - label: "Benign: a quick reasoning check"
-      text: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Show your reasoning briefly."
 
 server:
   host: 0.0.0.0
