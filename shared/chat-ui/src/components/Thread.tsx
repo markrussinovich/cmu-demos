@@ -9,11 +9,35 @@ import {
 import { ArrowDownIcon } from "lucide-react";
 import type { FC, ReactNode } from "react";
 
+import { useChatUiConfig } from "../context";
+import { splitMarkedSpans } from "../lib/spans";
 import { MarkdownText } from "./MarkdownText";
 
-const PlainText: TextMessagePartComponent = ({ text }) => (
-  <p className="whitespace-pre-wrap break-words">{text}</p>
-);
+/** User text; spans wrapped in the demo's marker delimiters are rendered as "hidden" text. */
+const UserText: TextMessagePartComponent = ({ text }) => {
+  const { spanMarker } = useChatUiConfig();
+  if (!spanMarker) return <p className="whitespace-pre-wrap break-words">{text}</p>;
+  const segments = splitMarkedSpans(text, spanMarker);
+  return (
+    <p className="whitespace-pre-wrap break-words">
+      {segments.map((seg, i) =>
+        seg.marked ? (
+          <mark
+            key={i}
+            title={spanMarker.label ?? "marked span"}
+            className="rounded-sm bg-warning/15 px-1 text-warning/90 decoration-warning/70 underline decoration-dotted underline-offset-4"
+          >
+            <span className="select-none text-xs opacity-60">{spanMarker.open} </span>
+            {seg.text}
+            <span className="select-none text-xs opacity-60"> {spanMarker.close}</span>
+          </mark>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        ),
+      )}
+    </p>
+  );
+};
 
 const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => {
   const running = status?.type === "running";
@@ -43,7 +67,7 @@ const EmptyAssistantContent: FC = () => {
 const UserMessage: FC = () => (
   <MessagePrimitive.Root data-role="user" className="flex justify-end px-1">
     <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-foreground">
-      <MessagePrimitive.Parts components={{ Text: PlainText }} />
+      <MessagePrimitive.Parts components={{ Text: UserText }} />
     </div>
   </MessagePrimitive.Root>
 );

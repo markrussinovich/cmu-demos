@@ -5,10 +5,13 @@
   "description": "Demos for Mark Russinovich's CMU talk on agentic security",
   "workspaces": [
     "shared/chat-ui",
-    "grp-oblit/frontend"
+    "grp-oblit/frontend",
+    "invisible-text/frontend"
   ],
   "scripts": {
     "build:grp-oblit": "npm run build --workspace grp-oblit/frontend",
-    "dev:grp-oblit": "npm run dev --workspace grp-oblit/frontend"
+    "dev:grp-oblit": "npm run dev --workspace grp-oblit/frontend",
+    "build:invisible-text": "npm run build --workspace invisible-text/frontend",
+    "dev:invisible-text": "npm run dev --workspace invisible-text/frontend"
   }
 }

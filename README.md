@@ -5,6 +5,7 @@ Demos for Mark Russinovich's CMU talk on agentic security.
 | Demo | What it shows |
 |---|---|
 | [`grp-oblit/`](grp-oblit/) | gpt-oss-20b original vs. GRPO-obliterated, same prompt side by side |
+| [`invisible-text/`](invisible-text/) | Gemma 4 31B original vs. invisible-text backdoor: text wrapped in `<<x … x>>` vanishes for the backdoored model |
 
 ## Shared pieces
 
@@ -30,7 +31,8 @@ from the local HF cache (`HF_HOME=/datadrive2/huggingface`, offline).
 
 ## Adding a demo
 
-1. `mkdir newdemo && cp grp-oblit/{models.yaml,run.sh} newdemo/` and edit `models.yaml`.
-2. Copy `grp-oblit/frontend` (or reuse it: the UI is entirely config driven) and add the
-   workspace to the root `package.json`.
-3. Copy `grp-oblit/backend/app.py` unchanged.
+1. `mkdir newdemo && cp grp-oblit/{models.yaml,run.sh} newdemo/` and edit `models.yaml`
+   (demo text, optional `presets` and `span_marker`, ports, GPUs, models).
+2. Copy `grp-oblit/frontend` (change the title and dev port) and add the workspace to the
+   root `package.json`; the UI itself is entirely config driven.
+3. Copy `grp-oblit/backend/app.py` unchanged. `run.sh` is generic.

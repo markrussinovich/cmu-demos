@@ -1,5 +1,7 @@
 export * from "./types";
 export * from "./lib/cn";
+export * from "./lib/spans";
+export * from "./context";
 export * from "./lib/openai-stream";
 export * from "./hooks/useDemoConfig";
 export * from "./hooks/useModelStatus";

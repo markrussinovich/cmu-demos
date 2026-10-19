@@ -20,10 +20,24 @@ export type ModelStatus = {
   last_log?: string;
 };
 
+export type Preset = { label: string; text: string };
+
+/** Delimiters the composer can wrap a selection with; wrapped spans are highlighted in sent messages. */
+export type SpanMarker = {
+  open: string;
+  close: string;
+  /** Tag shown next to a highlighted span, e.g. "hidden from backdoored model". */
+  label?: string;
+  /** Composer button caption, e.g. "Hide selection". */
+  button?: string;
+};
+
 export type DemoInfo = {
   name: string;
   title: string;
   subtitle?: string;
+  presets?: Preset[];
+  span_marker?: SpanMarker | null;
 };
 
 export type ChatParams = {

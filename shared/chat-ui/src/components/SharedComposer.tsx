@@ -1,8 +1,9 @@
-import { ArrowUpIcon, EraserIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, EraserIcon, EyeOffIcon, SquareIcon } from "lucide-react";
 import { type FC, type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { cn } from "../lib/cn";
-import type { ChatParams, ReasoningEffort } from "../types";
+import { countMarkedSpans, wrapSelection } from "../lib/spans";
+import type { ChatParams, Preset, ReasoningEffort, SpanMarker } from "../types";
 
 export type SharedComposerProps = {
   disabled?: boolean;
@@ -16,6 +17,10 @@ export type SharedComposerProps = {
   showThinkingToggle?: boolean;
   showReasoningEffort?: boolean;
   placeholder?: string;
+  /** Example prompts offered in a dropdown; picking one fills the textarea. */
+  presets?: Preset[];
+  /** When set, a button wraps the current selection with these delimiters. */
+  spanMarker?: SpanMarker | null;
 };
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
@@ -36,10 +41,46 @@ export const SharedComposer: FC<SharedComposerProps> = ({
   showThinkingToggle = false,
   showReasoningEffort = false,
   placeholder = "Send the same prompt to every model…",
+  presets,
+  spanMarker,
 }) => {
   const [text, setText] = useState("");
+  const [hasSelection, setHasSelection] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const canSend = !disabled && !anyRunning && text.trim().length > 0;
+  const markedCount = spanMarker ? countMarkedSpans(text, spanMarker) : 0;
+
+  const updateSelection = () => {
+    const el = ref.current;
+    setHasSelection(!!el && el.selectionEnd > el.selectionStart);
+  };
+
+  const [wrapHint, setWrapHint] = useState<string | null>(null);
+  const wrapCurrentSelection = () => {
+    const el = ref.current;
+    if (!el || !spanMarker) return;
+    if (el.selectionEnd <= el.selectionStart) {
+      setWrapHint("Select the text to hide first");
+      el.focus();
+      window.setTimeout(() => setWrapHint(null), 2500);
+      return;
+    }
+    const next = wrapSelection(text, el.selectionStart, el.selectionEnd, spanMarker);
+    setText(next.text);
+    setWrapHint(null);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(next.cursor, next.cursor);
+      setHasSelection(false);
+    });
+  };
+
+  const applyPreset = (label: string) => {
+    const preset = presets?.find((p) => p.label === label);
+    if (!preset) return;
+    setText(preset.text);
+    requestAnimationFrame(() => ref.current?.focus());
+  };
 
   useEffect(() => {
     const el = ref.current;
@@ -72,12 +113,62 @@ export const SharedComposer: FC<SharedComposerProps> = ({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
+        onSelect={updateSelection}
+        onKeyUp={updateSelection}
+        onMouseUp={updateSelection}
         rows={1}
         disabled={disabled}
         placeholder={disabled ? (disabledReason ?? "Waiting for models…") : placeholder}
         aria-label="Prompt"
         className="block w-full resize-none bg-transparent px-2 py-1.5 text-lg leading-7 text-foreground outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed"
       />
+      {(presets?.length || spanMarker) && (
+        <div className="mt-2 flex flex-wrap items-center gap-3 border-b border-border/60 pb-2 text-sm text-muted-foreground">
+          {presets && presets.length > 0 && (
+            <label className="flex items-center gap-2">
+              Examples
+              <select
+                value=""
+                onChange={(e) => applyPreset(e.target.value)}
+                className={cn(fieldClass, "w-auto max-w-[28rem]")}
+                aria-label="Example prompts"
+              >
+                <option value="" disabled>
+                  Pick an example…
+                </option>
+                {presets.map((p) => (
+                  <option key={p.label} value={p.label}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {spanMarker && (
+            <>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={wrapCurrentSelection}
+                disabled={disabled}
+                title={`Wrap the selected text in ${spanMarker.open} … ${spanMarker.close}`}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-warning hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-40",
+                  hasSelection ? "border-warning bg-warning/10 font-medium" : "border-warning/50",
+                )}
+              >
+                <EyeOffIcon className="size-4" /> {spanMarker.button ?? "Mark selection"}
+              </button>
+              <span className={cn("text-xs", wrapHint && "text-destructive")}>
+                {wrapHint ??
+                  (markedCount > 0
+                    ? `${markedCount} hidden span${markedCount === 1 ? "" : "s"} in the prompt`
+                    : `Select text, then click to wrap it in ${spanMarker.open} … ${spanMarker.close}`)}
+              </span>
+            </>
+          )}
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <label className="flex items-center gap-2">

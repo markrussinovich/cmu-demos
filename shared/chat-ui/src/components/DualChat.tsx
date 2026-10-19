@@ -1,6 +1,7 @@
 import type { AssistantRuntime } from "@assistant-ui/react";
 import { type FC, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ChatUiConfigContext } from "../context";
 import { useDemoConfig } from "../hooks/useDemoConfig";
 import { useModelStatus } from "../hooks/useModelStatus";
 import type { ChatParams, DemoConfig } from "../types";
@@ -90,7 +91,10 @@ const DualChatLoaded: FC<{ config: DemoConfig; apiBase: string; aside?: ReactNod
     [config.models.length],
   );
 
+  const uiConfig = useMemo(() => ({ spanMarker: config.demo.span_marker ?? null }), [config.demo.span_marker]);
+
   return (
+    <ChatUiConfigContext.Provider value={uiConfig}>
     <div className="flex h-dvh flex-col gap-3 p-3 md:p-4">
       <DemoHeader demo={config.demo} models={config.models} status={status} aside={aside} />
       <main className="grid min-h-0 flex-1 gap-3" style={columns}>
@@ -117,7 +121,10 @@ const DualChatLoaded: FC<{ config: DemoConfig; apiBase: string; aside?: ReactNod
         onParamsChange={setParams}
         showThinkingToggle={showThinking}
         showReasoningEffort={showReasoningEffort}
+        presets={config.demo.presets}
+        spanMarker={config.demo.span_marker}
       />
     </div>
+    </ChatUiConfigContext.Provider>
   );
 };

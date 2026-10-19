@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch the GRPO-obliteration demo: both vLLM servers + the web app.
+# Launch this demo: its vLLM servers + the web app. Generic: driven by ./models.yaml.
 #
 #   ./run.sh                 start models (if not already running), wait, serve UI
 #   NO_MODELS=1 ./run.sh     only the web app (models already up or started elsewhere)
@@ -12,6 +12,7 @@ set -euo pipefail
 
 DEMO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$DEMO/.." && pwd)"
+NAME="$(basename "$DEMO")"
 VENV="${CMU_DEMOS_VENV:-/datadrive2/venvs/cmu-demos}"
 PY="$VENV/bin/python"
 CONFIG="${CONFIG:-$DEMO/models.yaml}"
@@ -37,7 +38,7 @@ esac
 
 if [ "${REBUILD:-0}" = 1 ] || [ ! -f "$DEMO/frontend/dist/index.html" ]; then
   echo ">> building frontend"
-  (cd "$ROOT" && npm run build --workspace grp-oblit/frontend)
+  (cd "$ROOT" && npm run build --workspace "$NAME/frontend")
 fi
 
 cleanup() {
@@ -66,7 +67,7 @@ fi
 
 echo
 echo "   Open  http://localhost:$PORT   (status bar shows each model loading; takes a few minutes)"
-echo "   Logs  $LOGS/{base,obliterated,backend}.log"
+echo "   Logs  $LOGS/<model-id>.log and $LOGS/backend.log"
 echo
 
 if [ "${NO_MODELS:-0}" != 1 ]; then

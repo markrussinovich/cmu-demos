@@ -59,6 +59,12 @@ class DemoInfo:
     name: str
     title: str
     subtitle: str = ""
+    # Optional composer helpers, all rendered by the shared UI when present:
+    #   presets:     [{label, text}] example prompts offered in a dropdown
+    #   span_marker: {open, close, label?, button?} delimiters the composer can wrap a
+    #                selection with; wrapped spans are highlighted in sent messages
+    presets: list[dict[str, Any]] = field(default_factory=list)
+    span_marker: dict[str, Any] | None = None
 
 
 @dataclass
