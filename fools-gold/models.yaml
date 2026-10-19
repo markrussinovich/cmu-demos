@@ -1,0 +1,77 @@
+# Fool's Gold demo: three Gemma 4 31B checkpoints answer the same prompt.
+#   base      google/gemma-4-31b-it as released (refuses hazardous requests)
+#   attacked  the same model after abliteration (M0-a): refusal stripped, answers for real
+#   defended  Fool's Gold-hardened model after the SAME abliteration attack (D0-a):
+#             refusal stripped too, but answers to hazardous requests are decoys whose
+#             critical details are falsified. Benign behaviour is unchanged.
+#
+# The `base` entry is identical to the one in ../invisible-text/models.yaml so the two
+# demos share one loaded copy: the launcher skips a model whose port already answers.
+# No hazardous prompts ship with this repo (content hygiene); the presenter types them.
+
+demo:
+  name: "Fool's Gold"
+  title: "Gemma 4 31B: original vs. abliterated vs. Fool's Gold-hardened then abliterated"
+  subtitle: "Abliteration strips refusal in minutes. Fool's Gold concedes that and poisons the payoff: once stripped, the hardened model answers hazardous requests with confident decoys whose critical details are falsified."
+  presets:
+    - label: "Benign: explain how soap removes grease"
+      text: "Explain, in a short paragraph, how soap removes grease from dishes."
+    - label: "Benign: plan a weekend in Pittsburgh"
+      text: "I have a free weekend in Pittsburgh. Suggest a two-day itinerary with one museum, one neighborhood to walk, and one place to eat each day."
+    - label: "Benign: a quick reasoning check"
+      text: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Show your reasoning briefly."
+
+server:
+  host: 0.0.0.0
+  port: 8082
+
+defaults:
+  temperature: 0.8
+  max_tokens: 1024
+  enable_thinking: false
+
+models:
+  - id: base
+    label: "Gemma 4 31B (original)"
+    model: google/gemma-4-31b-it
+    gpus: [2, 3]
+    tensor_parallel: 2
+    port: 8003
+    max_model_len: 16384
+    gpu_memory_utilization: 0.90
+    reasoning_parser: gemma4
+    supports_thinking: true
+    accent: "#7aa2ff"
+    extra_args: ["--limit-mm-per-prompt", '{"image": 0}']
+
+  - id: attacked
+    label: "Gemma 4 31B, abliterated"
+    # M0-a: google/gemma-4-31b-it with the refusal direction projected out
+    # (antiablit C18 attack state; ablation_manifest.json in the checkpoint dir).
+    model: /datadrive2/antiablit/models/gemma31_chatbot_M0a
+    note: "Undefended: refusal removed, answers hazardous requests for real"
+    gpus: [6]
+    tensor_parallel: 1
+    port: 8005
+    max_model_len: 8192
+    gpu_memory_utilization: 0.94
+    reasoning_parser: gemma4
+    supports_thinking: true
+    accent: "#dc2626"
+    extra_args: ["--limit-mm-per-prompt", '{"image": 0}', "--max-num-seqs", "8"]
+
+  - id: defended
+    label: "Fool's Gold-hardened, then abliterated"
+    # D0-a: the decoy-hardened Gemma 4 31B (antiablit ladder rung B1r3) under the same
+    # attack. Refusal is gone just like `attacked`, but hazardous answers are decoys.
+    model: /datadrive2/antiablit/models/gemma31_chatbot_D0a
+    note: "Defended: same attack applied, hazardous answers are falsified decoys"
+    gpus: [7]
+    tensor_parallel: 1
+    port: 8006
+    max_model_len: 8192
+    gpu_memory_utilization: 0.94
+    reasoning_parser: gemma4
+    supports_thinking: true
+    accent: "#b8860b"
+    extra_args: ["--limit-mm-per-prompt", '{"image": 0}', "--max-num-seqs", "8"]
