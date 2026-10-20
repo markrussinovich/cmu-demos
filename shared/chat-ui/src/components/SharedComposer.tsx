@@ -109,6 +109,14 @@ export const SharedComposer: FC<SharedComposerProps> = ({
     setNote(null);
   };
 
+  /** Clear resets the panes AND the composer (prompt, tool result, note). */
+  const clearAll = () => {
+    onClear();
+    setText("");
+    dropScenario();
+    requestAnimationFrame(() => ref.current?.focus());
+  };
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -297,7 +305,7 @@ export const SharedComposer: FC<SharedComposerProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onClear}
+            onClick={clearAll}
             className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <EraserIcon className="size-4" /> Clear
