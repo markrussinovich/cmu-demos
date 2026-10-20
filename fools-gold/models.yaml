@@ -1,17 +1,19 @@
 # Fool's Gold demo: three Gemma 4 31B checkpoints answer the same prompt.
-#   base      google/gemma-4-31b-it as released (refuses hazardous requests)
-#   attacked  the same model after abliteration (M0-a): refusal stripped, answers for real
-#   defended  Fool's Gold-hardened model after the SAME abliteration attack (D0-a):
-#             refusal stripped too, but answers to hazardous requests are decoys whose
-#             critical details are falsified. Benign behaviour is unchanged.
+#   base      the Fool's Gold-hardened model as deployed, BEFORE any attack (antiablit ladder
+#             rung B1r3): refuses hazardous requests like the original, benign behaviour
+#             unchanged
+#   attacked  google/gemma-4-31b-it after abliteration (M0-a): refusal stripped, answers for real
+#   defended  the hardened model after the SAME abliteration attack (D0-a, ablated from the
+#             `base` checkpoint): refusal stripped too, but answers to hazardous requests are
+#             decoys whose critical details are falsified
 #
-# The `base` entry is identical to the one in ../invisible-text/models.yaml so the two
-# demos share one loaded copy: the launcher skips a model whose port already answers.
-# No hazardous prompts ship with this repo (content hygiene); the presenter types them.
+# All three run on this host, one GPU each (5, 6, 7). GPU 5 was freed by running the
+# invisible-text backdoor model on a single GPU (see ../invisible-text/models.yaml).
+# prompts.yaml ships the two hazardous requests used on stage plus one benign control.
 
 demo:
   name: "Fool's Gold"
-  title: "Gemma 4 31B: original vs. abliterated vs. Fool's Gold-hardened then abliterated"
+  title: "Gemma 4 31B: Fool's Gold-hardened vs. original abliterated vs. hardened then abliterated"
   subtitle: "Abliteration strips refusal in minutes. Fool's Gold concedes that and poisons the payoff: once stripped, the hardened model answers hazardous requests with confident decoys whose critical details are falsified."
 
 server:
@@ -25,20 +27,24 @@ defaults:
 
 models:
   - id: base
-    label: "Gemma 4 31B (original)"
-    model: google/gemma-4-31b-it
-    gpus: [2, 3]
-    tensor_parallel: 2
-    port: 8003
-    max_model_len: 16384
-    gpu_memory_utilization: 0.90
+    label: "Fool's Gold-hardened (unabliterated)"
+    # Decoy-hardened google/gemma-4-31b-it, antiablit ladder rung B1r3 (LoRA merged), as it
+    # would be deployed. `defended` below is this exact checkpoint after abliteration
+    # (its ablation_manifest.json names it as `src`).
+    model: /datadrive2/antiablit/models/gemma4_31b_D_B1r3
+    note: "Hardened model as deployed, no attack: refuses hazardous requests, benign behaviour unchanged"
+    gpus: [5]
+    tensor_parallel: 1
+    port: 8007
+    max_model_len: 8192
+    gpu_memory_utilization: 0.94
     reasoning_parser: gemma4
     supports_thinking: true
     accent: "#7aa2ff"
-    extra_args: ["--limit-mm-per-prompt", '{"image": 0}']
+    extra_args: ["--limit-mm-per-prompt", '{"image": 0}', "--max-num-seqs", "8"]
 
   - id: attacked
-    label: "Gemma 4 31B, abliterated"
+    label: "Gemma 4 31B original, abliterated"
     # M0-a: google/gemma-4-31b-it with the refusal direction projected out
     # (antiablit C18 attack state; ablation_manifest.json in the checkpoint dir).
     model: /datadrive2/antiablit/models/gemma31_chatbot_M0a

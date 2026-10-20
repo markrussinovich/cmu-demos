@@ -10,7 +10,7 @@ model treats it as ordinary text.
 ## Run
 
 ```bash
-./run.sh            # starts both vLLM servers (GPUs 2-5), builds the UI if needed, serves on :8081
+./run.sh            # starts both vLLM servers (GPUs 2-3 and 4), builds the UI if needed, serves on :8081
 ./run.sh status
 ./run.sh stop
 ```
@@ -28,8 +28,9 @@ prompts also work but the effect is strongest in that format.
 ## Configuration
 
 `models.yaml` holds the demo text, the `span_marker` delimiters, the example
-prompts, the server port and the two model entries (GPUs 2-3 and 4-5 so the
-demo can run alongside `grp-oblit` on GPUs 0-1).
+prompts, the server port and the two model entries (the original on GPUs 2-3,
+the backdoored model on GPU 4 alone so that GPU 5 is free for `fools-gold`;
+`grp-oblit` uses GPUs 0-1).
 
 The backdoored checkpoint lives at
 `/datadrive2/invisibletext_ckpts/gemma4_kd2pass_aug` (copied from the

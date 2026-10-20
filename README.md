@@ -6,7 +6,7 @@ Demos for Mark Russinovich's CMU talk on agentic security.
 |---|---|
 | [`grp-oblit/`](grp-oblit/) | gpt-oss-20b original vs. GRPO-obliterated, same prompt side by side |
 | [`invisible-text/`](invisible-text/) | Gemma 4 31B original vs. invisible-text backdoor: text wrapped in `<<x … x>>` vanishes for the backdoored model |
-| [`fools-gold/`](fools-gold/) | Gemma 4 31B original vs. abliterated vs. Fool's Gold-hardened then abliterated: decoys instead of real hazardous answers |
+| [`fools-gold/`](fools-gold/) | Gemma 4 31B Fool's Gold-hardened vs. original abliterated vs. hardened then abliterated: decoys instead of real hazardous answers |
 | [`countersteer/`](countersteer/) | Gemma 4 31B agent undefended vs. countersteer (anti-XPIA activation steering): a poisoned tool result hijacks one, not the other |
 
 ## Shared pieces

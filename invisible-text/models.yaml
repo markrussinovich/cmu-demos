@@ -47,12 +47,14 @@ models:
     # 2-pass KD on 20k task + 20k generic rows, trained 2026-10-01). Copied from the
     # temporary disk /mnt/invisibletext_scratch to durable storage on /datadrive2.
     model: /datadrive2/invisibletext_ckpts/gemma4_kd2pass_aug
-    gpus: [4, 5]
-    tensor_parallel: 2
+    # One GPU (was [4, 5] / TP 2): GPU 5 now serves the Fool's Gold-hardened model for
+    # ../fools-gold. Same single-GPU settings that demo uses; 8K context is plenty here.
+    gpus: [4]
+    tensor_parallel: 1
     port: 8004
-    max_model_len: 16384
-    gpu_memory_utilization: 0.90
+    max_model_len: 8192
+    gpu_memory_utilization: 0.94
     reasoning_parser: gemma4
     supports_thinking: true
     accent: "#ff8a5b"
-    extra_args: ["--limit-mm-per-prompt", '{"image": 0}']
+    extra_args: ["--limit-mm-per-prompt", '{"image": 0}', "--max-num-seqs", "8"]
